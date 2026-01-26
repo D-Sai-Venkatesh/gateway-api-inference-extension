@@ -200,8 +200,15 @@ func (wr *WorkloadRegistry) cleanup() {
 }
 
 // Stop stops the cleanup goroutine. Should be called when the registry is no longer needed.
+// It's safe to call Stop multiple times.
 func (wr *WorkloadRegistry) Stop() {
-	close(wr.stopCleanup)
+	select {
+	case <-wr.stopCleanup:
+		// Already stopped
+		return
+	default:
+		close(wr.stopCleanup)
+	}
 }
 
 // GetAllWorkloadIDs returns a list of all currently tracked workload IDs.

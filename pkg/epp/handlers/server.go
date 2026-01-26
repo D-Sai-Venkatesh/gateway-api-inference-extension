@@ -36,6 +36,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	logutil "sigs.k8s.io/gateway-api-inference-extension/pkg/common/util/logging"
 	"sigs.k8s.io/gateway-api-inference-extension/pkg/epp/datalayer"
+	"sigs.k8s.io/gateway-api-inference-extension/pkg/epp/datastore"
 	schedulingtypes "sigs.k8s.io/gateway-api-inference-extension/pkg/epp/framework/interface/scheduling"
 	handlerstypes "sigs.k8s.io/gateway-api-inference-extension/pkg/epp/handlers/types"
 	"sigs.k8s.io/gateway-api-inference-extension/pkg/epp/metrics"
@@ -92,6 +93,10 @@ type RequestContext struct {
 	Request                   *Request
 
 	SchedulingRequest *schedulingtypes.LLMRequest
+
+	// WorkloadContext contains workload identity and priority information
+	// extracted from the X-Workload-Context header for workload-aware routing
+	WorkloadContext *datastore.WorkloadContext
 
 	RequestState         StreamRequestState
 	modelServerStreaming bool
