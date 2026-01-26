@@ -18,6 +18,7 @@ package handlers
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	configPb "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
@@ -149,4 +150,148 @@ func TestGenerateRequestHeaderResponse_MergeMetadata(t *testing.T) {
 	endpointKey, ok := endpointNamespace.GetStructValue().Fields[metadata.DestinationEndpointKey]
 	assert.True(t, ok, "Expected DestinationEndpointKey to be in DestinationEndpointNamespace")
 	assert.Equal(t, "1.2.3.4:8080", endpointKey.GetStringValue(), "Unexpected value for DestinationEndpointKey")
+}
+
+func TestExtractWorkloadContext(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name              string
+		headers           map[string]string
+		wantWorkloadID    string
+		wantCriticality   int
+		checkUniqueID     bool // For cases where we generate unique IDs
+	}{
+		{
+			name: "Valid workload context",
+			headers: map[string]string{
+				"x-workload-context": `{"workload_id":"fraud-detection","criticality":5}`,
+			},
+			wantWorkloadID:  "fraud-detection",
+			wantCriticality: 5,
+		},
+		{
+			name: "Valid workload context with medium criticality",
+			headers: map[string]string{
+				"x-workload-context": `{"workload_id":"chatbot-prod","criticality":3}`,
+			},
+			wantWorkloadID:  "chatbot-prod",
+			wantCriticality: 3,
+		},
+		{
+			name:            "Missing workload context header",
+			headers:         map[string]string{},
+			wantCriticality: 3,
+			checkUniqueID:   true,
+		},
+		{
+			name: "Empty workload context header",
+			headers: map[string]string{
+				"x-workload-context": "",
+			},
+			wantCriticality: 3,
+			checkUniqueID:   true,
+		},
+		{
+			name: "Invalid JSON",
+			headers: map[string]string{
+				"x-workload-context": `{invalid json}`,
+			},
+			wantCriticality: 3,
+			checkUniqueID:   true,
+		},
+		{
+			name: "Empty workload_id in JSON",
+			headers: map[string]string{
+				"x-workload-context": `{"workload_id":"","criticality":4}`,
+			},
+			wantCriticality: 4,
+			checkUniqueID:   true,
+		},
+		{
+			name: "Criticality below minimum (0)",
+			headers: map[string]string{
+				"x-workload-context": `{"workload_id":"test-workload","criticality":0}`,
+			},
+			wantWorkloadID:  "test-workload",
+			wantCriticality: 1, // Clamped to min
+		},
+		{
+			name: "Criticality below minimum (negative)",
+			headers: map[string]string{
+				"x-workload-context": `{"workload_id":"test-workload","criticality":-5}`,
+			},
+			wantWorkloadID:  "test-workload",
+			wantCriticality: 1, // Clamped to min
+		},
+		{
+			name: "Criticality above maximum",
+			headers: map[string]string{
+				"x-workload-context": `{"workload_id":"test-workload","criticality":10}`,
+			},
+			wantWorkloadID:  "test-workload",
+			wantCriticality: 5, // Clamped to max
+		},
+		{
+			name: "Criticality at minimum boundary",
+			headers: map[string]string{
+				"x-workload-context": `{"workload_id":"test-workload","criticality":1}`,
+			},
+			wantWorkloadID:  "test-workload",
+			wantCriticality: 1,
+		},
+		{
+			name: "Criticality at maximum boundary",
+			headers: map[string]string{
+				"x-workload-context": `{"workload_id":"test-workload","criticality":5}`,
+			},
+			wantWorkloadID:  "test-workload",
+			wantCriticality: 5,
+		},
+		{
+			name: "Workload ID with special characters",
+			headers: map[string]string{
+				"x-workload-context": `{"workload_id":"my-app_v2.0","criticality":3}`,
+			},
+			wantWorkloadID:  "my-app_v2.0",
+			wantCriticality: 3,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			result := extractWorkloadContext(ctx, tt.headers)
+
+			assert.NotNil(t, result, "extractWorkloadContext should not return nil")
+			assert.Equal(t, tt.wantCriticality, result.Criticality, "Criticality should match expected value")
+
+			if tt.checkUniqueID {
+				// Verify it's a unique auto-generated ID
+				assert.True(t, strings.HasPrefix(result.WorkloadID, "auto-"), 
+					"Auto-generated workload ID should have 'auto-' prefix, got: %s", result.WorkloadID)
+				assert.Greater(t, len(result.WorkloadID), 10, 
+					"Auto-generated workload ID should be sufficiently long")
+			} else {
+				assert.Equal(t, tt.wantWorkloadID, result.WorkloadID, "WorkloadID should match expected value")
+			}
+		})
+	}
+}
+
+func TestExtractWorkloadContext_UniqueIDs(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	headers := map[string]string{} // No workload context
+
+	// Generate multiple workload contexts and verify they're unique
+	ids := make(map[string]bool)
+	for i := 0; i < 10; i++ {
+		result := extractWorkloadContext(ctx, headers)
+		assert.False(t, ids[result.WorkloadID], "Generated workload IDs should be unique")
+		ids[result.WorkloadID] = true
+	}
+
+	assert.Equal(t, 10, len(ids), "Should have generated 10 unique workload IDs")
 }

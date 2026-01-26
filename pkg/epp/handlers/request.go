@@ -18,17 +18,20 @@ package handlers
 
 import (
 	"context"
+	"encoding/json"
 	"maps"
 	"strconv"
 	"time"
 
 	configPb "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	extProcPb "github.com/envoyproxy/go-control-plane/envoy/service/ext_proc/v3"
+	"github.com/google/uuid"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/propagation"
 	"google.golang.org/protobuf/types/known/structpb"
 
 	"sigs.k8s.io/gateway-api-inference-extension/pkg/common"
+	"sigs.k8s.io/gateway-api-inference-extension/pkg/epp/datastore"
 	"sigs.k8s.io/gateway-api-inference-extension/pkg/epp/metadata"
 	errutil "sigs.k8s.io/gateway-api-inference-extension/pkg/epp/util/error"
 	"sigs.k8s.io/gateway-api-inference-extension/pkg/epp/util/request"
@@ -39,6 +42,18 @@ const (
 	// This ensures that requests without explicit fairness identifiers are still grouped and managed by the Flow Control
 	// system.
 	defaultFairnessID = "default-flow"
+
+	// workloadContextHeaderKey is the header name for workload context information
+	workloadContextHeaderKey = "x-workload-context"
+
+	// defaultCriticality is the default priority level (1-5 scale)
+	defaultCriticality = 3
+
+	// minCriticality is the minimum allowed criticality value
+	minCriticality = 1
+
+	// maxCriticality is the maximum allowed criticality value
+	maxCriticality = 5
 )
 
 func (s *StreamingServer) HandleRequestHeaders(ctx context.Context, reqCtx *RequestContext, req *extProcPb.ProcessingRequest_RequestHeaders) error {
@@ -76,7 +91,49 @@ func (s *StreamingServer) HandleRequestHeaders(ctx context.Context, reqCtx *Requ
 		reqCtx.FairnessID = defaultFairnessID
 	}
 
+	// Extract and parse workload context from X-Workload-Context header
+	reqCtx.WorkloadContext = extractWorkloadContext(ctx, reqCtx.Request.Headers)
+
 	return nil
+}
+
+// extractWorkloadContext extracts and validates the workload context from request headers.
+// If the header is missing, it generates a unique workload ID to avoid request rate penalties.
+// If the header is invalid, it returns a default workload context.
+func extractWorkloadContext(ctx context.Context, headers map[string]string) *datastore.WorkloadContext {
+	workloadContextJSON, exists := headers[workloadContextHeaderKey]
+	if !exists || workloadContextJSON == "" {
+		// No workload context provided - generate unique workload ID to avoid
+		// single requests being penalized by request rate fairness
+		return &datastore.WorkloadContext{
+			WorkloadID:  "auto-" + uuid.NewString(),
+			Criticality: defaultCriticality,
+		}
+	}
+
+	// Parse JSON workload context
+	var workloadCtx datastore.WorkloadContext
+	if err := json.Unmarshal([]byte(workloadContextJSON), &workloadCtx); err != nil {
+		// Invalid JSON - generate unique workload ID
+		return &datastore.WorkloadContext{
+			WorkloadID:  "auto-" + uuid.NewString(),
+			Criticality: defaultCriticality,
+		}
+	}
+
+	// Validate and sanitize workload ID
+	if workloadCtx.WorkloadID == "" {
+		workloadCtx.WorkloadID = "auto-" + uuid.NewString()
+	}
+
+	// Clamp criticality to valid range (1-5)
+	if workloadCtx.Criticality < minCriticality {
+		workloadCtx.Criticality = minCriticality
+	} else if workloadCtx.Criticality > maxCriticality {
+		workloadCtx.Criticality = maxCriticality
+	}
+
+	return &workloadCtx
 }
 
 func (s *StreamingServer) generateRequestBodyResponses(requestBodyBytes []byte) []*extProcPb.ProcessingResponse {

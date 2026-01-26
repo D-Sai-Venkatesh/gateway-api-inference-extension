@@ -24,8 +24,8 @@ import (
 // WorkloadContext represents the workload identity and priority information
 // extracted from the X-Workload-Context header.
 type WorkloadContext struct {
-	WorkloadID  string
-	Criticality int // 1-5, where 5 is highest priority
+	WorkloadID  string `json:"workload_id"`
+	Criticality int    `json:"criticality"` // 1-5, where 5 is highest priority
 }
 
 // WorkloadMetrics tracks request metrics for a specific workload.
