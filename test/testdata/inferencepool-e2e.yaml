@@ -117,6 +117,8 @@ data:
       - pluginRef: queue-scorer
       - pluginRef: kv-cache-utilization-scorer
       - pluginRef: prefix-cache-scorer
+    featureGates:
+    - flowControl
 ---
 apiVersion: apps/v1
 kind: Deployment
