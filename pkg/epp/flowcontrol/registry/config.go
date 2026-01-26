@@ -23,7 +23,6 @@ import (
 
 	"k8s.io/apimachinery/pkg/util/sets"
 
-	"sigs.k8s.io/gateway-api-inference-extension/pkg/epp/datastore"
 	"sigs.k8s.io/gateway-api-inference-extension/pkg/epp/flowcontrol/contracts"
 	"sigs.k8s.io/gateway-api-inference-extension/pkg/epp/flowcontrol/framework"
 	"sigs.k8s.io/gateway-api-inference-extension/pkg/epp/flowcontrol/framework/plugins/interflow"
@@ -143,11 +142,6 @@ type Config struct {
 	// Optional: Defaults to `defaultEventChannelBufferSize` (4096).
 	EventChannelBufferSize int
 
-	// WorkloadRegistry is the shared registry for tracking per-workload metrics (active requests, request rates).
-	// This registry is injected from the datastore and shared across all priority bands and shards.
-	// It enables workload-aware ordering policies to access request rate information for fair scheduling.
-	// Optional: If nil, workload-aware policies will function without request rate tracking.
-	WorkloadRegistry *datastore.WorkloadRegistry
 }
 
 // PriorityBandConfig defines the configuration template for a single priority band.

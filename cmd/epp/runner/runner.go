@@ -210,12 +210,11 @@ func (r *Runner) Run(ctx context.Context) error {
 		return err
 	}
 
-	// --- Inject WorkloadRegistry into FlowControl Config ---
+	// --- Inject WorkloadRegistry into WorkloadAwarePolicy instances ---
 	// If flow control is enabled, inject the WorkloadRegistry from datastore
-	// so that workload-aware ordering policies can access per-workload metrics
+	// directly into policy instances so they can access per-workload metrics
 	if eppConfig.FlowControlConfig != nil {
 		workloadRegistry := ds.GetWorkloadRegistry()
-		eppConfig.FlowControlConfig.Registry.WorkloadRegistry = workloadRegistry
 		
 		// Inject WorkloadRegistry into all WorkloadAwarePolicy instances
 		// This covers both static priority bands and the DefaultPriorityBand template
