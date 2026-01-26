@@ -59,6 +59,7 @@ import (
 	"sigs.k8s.io/gateway-api-inference-extension/pkg/epp/flowcontrol"
 	"sigs.k8s.io/gateway-api-inference-extension/pkg/epp/flowcontrol/contracts"
 	fccontroller "sigs.k8s.io/gateway-api-inference-extension/pkg/epp/flowcontrol/controller"
+	"sigs.k8s.io/gateway-api-inference-extension/pkg/epp/flowcontrol/framework/plugins/intraflow"
 	fcregistry "sigs.k8s.io/gateway-api-inference-extension/pkg/epp/flowcontrol/registry"
 	fwkplugin "sigs.k8s.io/gateway-api-inference-extension/pkg/epp/framework/interface/plugin"
 	"sigs.k8s.io/gateway-api-inference-extension/pkg/epp/metrics"
@@ -215,7 +216,34 @@ func (r *Runner) Run(ctx context.Context) error {
 	if eppConfig.FlowControlConfig != nil {
 		workloadRegistry := ds.GetWorkloadRegistry()
 		eppConfig.FlowControlConfig.Registry.WorkloadRegistry = workloadRegistry
-		setupLog.Info("Injected WorkloadRegistry into FlowControl configuration")
+		
+		// Inject WorkloadRegistry into all WorkloadAwarePolicy instances
+		// This covers both static priority bands and the DefaultPriorityBand template
+		registryConfig := eppConfig.FlowControlConfig.Registry
+		
+		// 1. Inject into static priority bands
+		for priority, bandConfig := range registryConfig.PriorityBands {
+			if waPolicy, ok := bandConfig.OrderingPolicy.(*intraflow.WorkloadAwarePolicy); ok {
+				waPolicy.SetWorkloadRegistry(workloadRegistry)
+				setupLog.V(1).Info("Injected WorkloadRegistry into static priority band",
+					"priority", priority, "bandName", bandConfig.PriorityName)
+			}
+		}
+		
+		// 2. Inject into DefaultPriorityBand template
+		// This is critical: when dynamic priority bands are created via ensurePriorityBand(),
+		// they copy the DefaultPriorityBand struct. Since OrderingPolicy is a pointer,
+		// all dynamic bands will share the same policy instance and automatically have the registry.
+		if registryConfig.DefaultPriorityBand != nil {
+			if waPolicy, ok := registryConfig.DefaultPriorityBand.OrderingPolicy.(*intraflow.WorkloadAwarePolicy); ok {
+				waPolicy.SetWorkloadRegistry(workloadRegistry)
+				setupLog.Info("Injected WorkloadRegistry into DefaultPriorityBand template - all dynamic bands will inherit this")
+			}
+		}
+		
+		setupLog.Info("WorkloadRegistry injection complete",
+			"staticBands", len(registryConfig.PriorityBands),
+			"hasDefaultTemplate", registryConfig.DefaultPriorityBand != nil)
 	}
 
 	// --- Setup Metrics Server ---
