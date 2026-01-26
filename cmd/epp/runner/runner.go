@@ -209,6 +209,15 @@ func (r *Runner) Run(ctx context.Context) error {
 		return err
 	}
 
+	// --- Inject WorkloadRegistry into FlowControl Config ---
+	// If flow control is enabled, inject the WorkloadRegistry from datastore
+	// so that workload-aware ordering policies can access per-workload metrics
+	if eppConfig.FlowControlConfig != nil {
+		workloadRegistry := ds.GetWorkloadRegistry()
+		eppConfig.FlowControlConfig.Registry.WorkloadRegistry = workloadRegistry
+		setupLog.Info("Injected WorkloadRegistry into FlowControl configuration")
+	}
+
 	// --- Setup Metrics Server ---
 	r.customCollectors = append(r.customCollectors, collectors.NewInferencePoolMetricsCollector(ds))
 	metrics.Register(r.customCollectors...)
