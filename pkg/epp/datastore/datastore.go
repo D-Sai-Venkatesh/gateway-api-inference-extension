@@ -23,6 +23,7 @@ import (
 	"net"
 	"strconv"
 	"sync"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -71,6 +72,9 @@ type Datastore interface {
 	PodUpdateOrAddIfNotExist(pod *corev1.Pod) bool
 	PodDelete(podName string)
 
+	// WorkloadRegistry operations
+	GetWorkloadRegistry() *WorkloadRegistry
+
 	// Clears the store state, happens when the pool gets deleted.
 	Clear()
 }
@@ -88,6 +92,7 @@ func NewDatastore(parentCtx context.Context, epFactory datalayer.EndpointFactory
 		pods:                   &sync.Map{},
 		modelServerMetricsPort: modelServerMetricsPort,
 		epf:                    epFactory,
+		workloadRegistry:       NewWorkloadRegistry(60 * time.Second),
 	}
 
 	// Apply options
@@ -114,6 +119,8 @@ type datastore struct {
 	// used only if there is only one inference engine per pod
 	modelServerMetricsPort int32 // TODO: deprecating
 	epf                    datalayer.EndpointFactory
+	// workloadRegistry tracks metrics for workload-aware routing
+	workloadRegistry *WorkloadRegistry
 }
 
 func (ds *datastore) Clear() {
@@ -128,6 +135,16 @@ func (ds *datastore) Clear() {
 		return true
 	})
 	ds.pods.Clear()
+	// Stop and recreate workload registry
+	if ds.workloadRegistry != nil {
+		ds.workloadRegistry.Stop()
+	}
+	ds.workloadRegistry = NewWorkloadRegistry(60 * time.Second)
+}
+
+// GetWorkloadRegistry returns the workload registry for tracking request metrics.
+func (ds *datastore) GetWorkloadRegistry() *WorkloadRegistry {
+	return ds.workloadRegistry
 }
 
 // /// Pool APIs ///

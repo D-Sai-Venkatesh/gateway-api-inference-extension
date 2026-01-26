@@ -55,6 +55,7 @@ type Datastore interface {
 	PodList(predicate func(backendmetrics.PodMetrics) bool) []backendmetrics.PodMetrics
 	// ModelRewriteGet returns the rewrite rule for a given model name and the name of the InferenceModelRewrite object.
 	ModelRewriteGet(modelName string) (*v1alpha2.InferenceModelRewriteRule, string)
+	GetWorkloadRegistry() *datastore.WorkloadRegistry
 }
 
 // Scheduler defines the interface required by the Director for scheduling.

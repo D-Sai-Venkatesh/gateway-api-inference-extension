@@ -163,6 +163,10 @@ func (m mockProducedDataType) Clone() datalayer.Cloneable {
 	return mockProducedDataType{value: m.value}
 }
 
+func (ds *mockDatastore) GetWorkloadRegistry() *datastore.WorkloadRegistry {
+	return nil
+}
+
 func (ds *mockDatastore) ModelRewriteGet(modelName string) (*v1alpha2.InferenceModelRewriteRule, string) {
 	// This mock implementation simulates the precedence logic for simplicity.
 	// It finds the oldest rewrite that has a rule matching the modelName.

@@ -61,6 +61,7 @@ type Director interface {
 
 type Datastore interface {
 	PoolGet() (*datalayer.EndpointPool, error)
+	GetWorkloadRegistry() *datastore.WorkloadRegistry
 }
 
 // Server implements the Envoy external processing server.
@@ -177,6 +178,11 @@ func (s *StreamingServer) Process(srv extProcPb.ExternalProcessor_ProcessServer)
 			metrics.DecRunningRequests(reqCtx.IncomingModelName)
 		}
 
+		// Decrement workload active request count on completion/error/disconnect
+		if reqCtx.WorkloadContext != nil {
+			s.datastore.GetWorkloadRegistry().DecrementActive(reqCtx.WorkloadContext.WorkloadID)
+		}
+
 		// If we scheduled a pod (TargetPod != nil) but never marked the response  as complete (e.g. error, disconnect,
 		// panic), force the completion hooks to run.
 		if reqCtx.TargetPod != nil && !reqCtx.ResponseComplete {
@@ -243,6 +249,12 @@ func (s *StreamingServer) Process(srv extProcPb.ExternalProcessor_ProcessServer)
 				// Body stream complete. Capture raw size for flow control.
 				reqCtx.RequestSize = len(body)
 				body = []byte{}
+
+				// Increment workload active request count
+				// Note: Tracks all requests including rejected ones to prevent gaming the system
+				if reqCtx.WorkloadContext != nil {
+					s.datastore.GetWorkloadRegistry().IncrementActive(reqCtx.WorkloadContext.WorkloadID)
+				}
 
 				reqCtx, err = s.director.HandleRequest(ctx, reqCtx)
 				if err != nil {
