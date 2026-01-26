@@ -38,11 +38,12 @@ const (
 	// It is set to 1 GB.
 	defaultPriorityBandMaxBytes uint64 = 1_000_000_000
 	// defaultOrderingPolicyRef is the default policy for selecting items within a single flow's queue.
-	defaultOrderingPolicyRef string = intraflow.FCFSOrderingPolicyType
+	defaultOrderingPolicyRef string = intraflow.WorkloadAwareOrderingPolicyType
 	// defaultFairnessPolicyRef is the default policy for selecting which flow's queue to service next.
 	defaultFairnessPolicyRef string = interflow.GlobalStrictFairnessPolicyType
 	// defaultQueue is the default queue implementation for flows.
-	defaultQueue queue.RegisteredQueueName = queue.ListQueueName
+	// MaxMinHeap is required for workload-aware ordering policy which needs PriorityConfigurable capability.
+	defaultQueue queue.RegisteredQueueName = queue.MaxMinHeapName
 	// defaultInitialShardCount is the default number of parallel shards to create when the registry is initialized.
 	defaultInitialShardCount int = 1
 	// defaultFlowGCTimeout is the default duration of inactivity after which an idle flow is garbage collected.
@@ -141,7 +142,6 @@ type Config struct {
 	// This value must be greater than zero.
 	// Optional: Defaults to `defaultEventChannelBufferSize` (4096).
 	EventChannelBufferSize int
-
 }
 
 // PriorityBandConfig defines the configuration template for a single priority band.

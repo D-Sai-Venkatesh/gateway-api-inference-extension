@@ -35,7 +35,8 @@ import (
 //   - Request Rate: Fairness across workloads (penalizes high-rate workloads)
 //
 // The priority score is computed as:
-//   Score = (WaitTime × 0.4) + (Criticality × 0.4) - (RequestRate × 0.2)
+//
+//	Score = (WaitTime × 0.4) + (Criticality × 0.4) - (RequestRate × 0.2)
 //
 // All values are normalized to [0, 1] range before applying weights.
 //
@@ -47,16 +48,16 @@ const WorkloadAwareOrderingPolicyType = "workload-aware-ordering-policy"
 type WorkloadAwarePolicyConfig struct {
 	// WaitTimeWeight is the weight for wait time component (default: 0.4)
 	WaitTimeWeight float64 `json:"waitTimeWeight,omitempty"`
-	
+
 	// CriticalityWeight is the weight for criticality component (default: 0.4)
 	CriticalityWeight float64 `json:"criticalityWeight,omitempty"`
-	
+
 	// RequestRateWeight is the weight for request rate penalty (default: 0.2)
 	RequestRateWeight float64 `json:"requestRateWeight,omitempty"`
-	
+
 	// MaxWaitTimeSeconds is the cap for wait time normalization (default: 60)
 	MaxWaitTimeSeconds float64 `json:"maxWaitTimeSeconds,omitempty"`
-	
+
 	// MaxRequestRate is the cap for request rate normalization (default: 100)
 	MaxRequestRate float64 `json:"maxRequestRate,omitempty"`
 }
@@ -147,15 +148,15 @@ func (p *WorkloadAwarePolicy) Less(a, b types.QueueItemAccessor) bool {
 	if b == nil { // Treat non-nil 'a' as higher priority than nil 'b'
 		return true
 	}
-	
+
 	now := time.Now()
 	scoreA := p.computeScore(a, now)
 	scoreB := p.computeScore(b, now)
-	
+
 	if scoreA != scoreB {
 		return scoreA > scoreB // Higher score = higher priority
 	}
-	
+
 	// Tie-breaker: FCFS (earlier enqueue time = higher priority)
 	return a.EnqueueTime().Before(b.EnqueueTime())
 }
@@ -167,7 +168,7 @@ func (p *WorkloadAwarePolicy) computeScore(item types.QueueItemAccessor, now tim
 	metadata := item.OriginalRequest().GetMetadata()
 	workloadID, _ := metadata["workload_id"].(string)
 	criticality, _ := metadata["criticality"].(int)
-	
+
 	// Default values if metadata is missing
 	if workloadID == "" {
 		workloadID = "default"
@@ -175,21 +176,21 @@ func (p *WorkloadAwarePolicy) computeScore(item types.QueueItemAccessor, now tim
 	if criticality < 1 || criticality > 5 {
 		criticality = 3 // Default to medium priority
 	}
-	
+
 	// Get request rate from registry
 	requestRate := 0.0
 	if p.workloadRegistry != nil {
 		requestRate = p.workloadRegistry.GetRequestRate(workloadID)
 	}
-	
+
 	// Compute wait time in seconds
 	waitTime := now.Sub(item.EnqueueTime()).Seconds()
-	
+
 	// Normalize all components to [0, 1] range
 	normalizedWait := math.Min(waitTime/p.config.MaxWaitTimeSeconds, 1.0)
 	normalizedCrit := float64(criticality) / 5.0
 	normalizedRate := math.Min(requestRate/p.config.MaxRequestRate, 1.0)
-	
+
 	// Compute weighted score
 	// Higher wait time → higher priority (anti-starvation)
 	// Higher criticality → higher priority (user intent)
@@ -197,7 +198,7 @@ func (p *WorkloadAwarePolicy) computeScore(item types.QueueItemAccessor, now tim
 	score := (normalizedWait * p.config.WaitTimeWeight) +
 		(normalizedCrit * p.config.CriticalityWeight) -
 		(normalizedRate * p.config.RequestRateWeight)
-	
+
 	return score
 }
 

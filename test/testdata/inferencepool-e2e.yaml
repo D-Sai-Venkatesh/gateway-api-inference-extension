@@ -108,6 +108,8 @@ data:
     apiVersion: inference.networking.x-k8s.io/v1alpha1
     kind: EndpointPickerConfig
     plugins:
+    - type: workload-aware-ordering-policy
+      name: workload-aware-ordering-policy
     - type: queue-scorer
     - type: kv-cache-utilization-scorer
     - type: prefix-cache-scorer

@@ -968,4 +968,43 @@ curl http://localhost:9090/api/v1/workload/fraud-detection/metrics
 
 **Document Version:** 1.0  
 **Last Updated:** 2026-01-22  
+
+---
+
+## Phase 5 Completion Summary
+
+### Configuration Fixed (2026-01-26)
+
+**Changes Made:**
+
+1. **test/testdata/inferencepool-e2e.yaml:107-123**
+   - Removed invalid `flowControl:` section
+   - Added `workload-aware-ordering-policy` plugin
+   - Enabled `flowControl` feature gate
+
+2. **pkg/epp/flowcontrol/registry/config.go:41**
+   - Changed `defaultOrderingPolicyRef` from `FCFSOrderingPolicyType` to `WorkloadAwareOrderingPolicyType`
+
+3. **pkg/epp/flowcontrol/registry/config.go:46**
+   - Changed `defaultQueue` from `queue.ListQueueName` to `queue.MaxMinHeapName`
+
+**Why MaxMinHeap:**
+- WorkloadAwarePolicy requires `CapabilityPriorityConfigurable`
+- ListQueue only provides FIFO capability
+- MaxMinHeap provides priority queue with custom comparators
+
+**Test Command:**
+```bash
+make image-build
+make test-e2e
+```
+
+**Test Request:**
+```bash
+curl -X POST http://localhost:8080/v1/chat/completions \
+  -H "X-Workload-Context: {\"workload_id\":\"test\",\"criticality\":5}" \
+  -d '{"model":"llama-2","messages":[{"role":"user","content":"Test"}]}'
+```
+
+**Status:** Configuration complete, ready for testing
 **Author:** IBM Bob (AI Planning Assistant)
