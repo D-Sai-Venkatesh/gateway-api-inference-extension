@@ -61,6 +61,8 @@ type Director interface {
 
 type Datastore interface {
 	PoolGet() (*datalayer.EndpointPool, error)
+	WorkloadHandleNewRequest(workloadID string)
+	WorkloadHandleCompletedRequest(workloadID string)
 	GetWorkloadRegistry() *datastore.WorkloadRegistry
 }
 
@@ -178,9 +180,9 @@ func (s *StreamingServer) Process(srv extProcPb.ExternalProcessor_ProcessServer)
 			metrics.DecRunningRequests(reqCtx.IncomingModelName)
 		}
 
-		// Decrement workload active request count on completion/error/disconnect
+		// Handle completed request for workload tracking
 		if reqCtx.WorkloadContext != nil {
-			s.datastore.GetWorkloadRegistry().DecrementActive(reqCtx.WorkloadContext.WorkloadID)
+			s.datastore.WorkloadHandleCompletedRequest(reqCtx.WorkloadContext.WorkloadID)
 		}
 
 		// If we scheduled a pod (TargetPod != nil) but never marked the response  as complete (e.g. error, disconnect,
@@ -250,10 +252,10 @@ func (s *StreamingServer) Process(srv extProcPb.ExternalProcessor_ProcessServer)
 				reqCtx.RequestSize = len(body)
 				body = []byte{}
 
-				// Increment workload active request count
+				// Handle new request for workload tracking
 				// Note: Tracks all requests including rejected ones to prevent gaming the system
 				if reqCtx.WorkloadContext != nil {
-					s.datastore.GetWorkloadRegistry().IncrementActive(reqCtx.WorkloadContext.WorkloadID)
+					s.datastore.WorkloadHandleNewRequest(reqCtx.WorkloadContext.WorkloadID)
 				}
 
 				reqCtx, err = s.director.HandleRequest(ctx, reqCtx)

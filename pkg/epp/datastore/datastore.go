@@ -72,7 +72,11 @@ type Datastore interface {
 	PodUpdateOrAddIfNotExist(pod *corev1.Pod) bool
 	PodDelete(podName string)
 
-	// WorkloadRegistry operations
+	// Workload operations
+	WorkloadHandleNewRequest(workloadID string)
+	WorkloadHandleCompletedRequest(workloadID string)
+	WorkloadGetRequestRate(workloadID string) float64
+	WorkloadGetMetrics(workloadID string) *WorkloadMetrics
 	GetWorkloadRegistry() *WorkloadRegistry
 
 	// Clears the store state, happens when the pool gets deleted.
@@ -142,7 +146,29 @@ func (ds *datastore) Clear() {
 	ds.workloadRegistry = NewWorkloadRegistry(60 * time.Second)
 }
 
-// GetWorkloadRegistry returns the workload registry for tracking request metrics.
+// WorkloadHandleNewRequest increments the active request count for the given workload.
+// It also updates the sliding window metrics and last request time.
+func (ds *datastore) WorkloadHandleNewRequest(workloadID string) {
+	ds.workloadRegistry.IncrementActive(workloadID)
+}
+
+// WorkloadHandleCompletedRequest decrements the active request count for the given workload.
+func (ds *datastore) WorkloadHandleCompletedRequest(workloadID string) {
+	ds.workloadRegistry.DecrementActive(workloadID)
+}
+
+// WorkloadGetRequestRate returns the current request rate (requests per second) for the given workload.
+func (ds *datastore) WorkloadGetRequestRate(workloadID string) float64 {
+	return ds.workloadRegistry.GetRequestRate(workloadID)
+}
+
+// WorkloadGetMetrics returns a snapshot of the metrics for the given workload.
+func (ds *datastore) WorkloadGetMetrics(workloadID string) *WorkloadMetrics {
+	return ds.workloadRegistry.GetMetrics(workloadID)
+}
+
+// GetWorkloadRegistry returns the workload registry for internal use by flow control.
+// This method is kept for backward compatibility with flow control plugins.
 func (ds *datastore) GetWorkloadRegistry() *WorkloadRegistry {
 	return ds.workloadRegistry
 }
