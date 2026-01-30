@@ -63,6 +63,7 @@ type Datastore interface {
 	PoolGet() (*datalayer.EndpointPool, error)
 	WorkloadHandleNewRequest(workloadID string)
 	WorkloadHandleCompletedRequest(workloadID string)
+	WorkloadHandleDispatchedRequest(workloadID string, waitTime time.Duration)
 	GetWorkloadRegistry() *datastore.WorkloadRegistry
 }
 
@@ -262,6 +263,12 @@ func (s *StreamingServer) Process(srv extProcPb.ExternalProcessor_ProcessServer)
 				if err != nil {
 					logger.V(logutil.DEFAULT).Error(err, "Error handling request")
 					break
+				}
+
+				// Record dispatch time for workload average wait time tracking
+				if reqCtx.WorkloadContext != nil && reqCtx.TargetPod != nil {
+					waitTime := time.Since(reqCtx.RequestReceivedTimestamp)
+					s.datastore.WorkloadHandleDispatchedRequest(reqCtx.WorkloadContext.WorkloadID, waitTime)
 				}
 
 				// Marshal after HandleRequest to include modifications (e.g., model rewriting).

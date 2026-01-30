@@ -36,7 +36,13 @@ type WorkloadMetrics struct {
 	SlidingWindowRequests int64 // Requests in the current sliding window
 	WindowStartTime       time.Time
 	LastRequestTime       time.Time
-	mu                    sync.RWMutex
+
+	// Average wait time tracking (EMA)
+	AverageWaitTime time.Duration // Exponential Moving Average of wait times
+	DispatchedCount int64         // Total requests dispatched
+	EMAAlpha        float64       // Decay factor for EMA (default: 0.2)
+
+	mu sync.RWMutex
 }
 
 // WorkloadRegistry maintains metrics for all active workloads.
@@ -71,14 +77,14 @@ func NewWorkloadRegistry(windowDuration time.Duration) *WorkloadRegistry {
 // It also updates the sliding window metrics and last request time.
 func (wr *WorkloadRegistry) IncrementActive(workloadID string) {
 	now := time.Now()
-	
+
 	// Load or create workload metrics
 	value, _ := wr.workloads.LoadOrStore(workloadID, &WorkloadMetrics{
 		WorkloadID:      workloadID,
 		WindowStartTime: now,
 		LastRequestTime: now,
 	})
-	
+
 	metrics := value.(*WorkloadMetrics)
 	metrics.mu.Lock()
 	defer metrics.mu.Unlock()
@@ -163,7 +169,47 @@ func (wr *WorkloadRegistry) GetMetrics(workloadID string) *WorkloadMetrics {
 		SlidingWindowRequests: metrics.SlidingWindowRequests,
 		WindowStartTime:       metrics.WindowStartTime,
 		LastRequestTime:       metrics.LastRequestTime,
+		AverageWaitTime:       metrics.AverageWaitTime,
+		DispatchedCount:       metrics.DispatchedCount,
+		EMAAlpha:              metrics.EMAAlpha,
 	}
+}
+
+// RecordDispatch updates the average wait time when a request is dispatched.
+// Uses Exponential Moving Average (EMA) for smooth, adaptive tracking.
+//
+// Formula: AvgWaitTime = α × CurrentWait + (1-α) × PreviousAvg
+// Where α (alpha) controls sensitivity to recent changes (default: 0.2)
+//
+// This method should be called when a request is successfully dispatched to track
+// the workload's historical wait time behavior.
+func (wr *WorkloadRegistry) RecordDispatch(workloadID string, waitTime time.Duration) {
+	value, ok := wr.workloads.Load(workloadID)
+	if !ok {
+		return // Workload not found, nothing to update
+	}
+
+	metrics := value.(*WorkloadMetrics)
+	metrics.mu.Lock()
+	defer metrics.mu.Unlock()
+
+	// Initialize alpha if not set (default: 0.2 = 20% current, 80% history)
+	if metrics.EMAAlpha == 0 {
+		metrics.EMAAlpha = 0.2
+	}
+
+	// First dispatch: initialize average with the first wait time
+	if metrics.DispatchedCount == 0 {
+		metrics.AverageWaitTime = waitTime
+	} else {
+		// EMA calculation: blend current wait time with historical average
+		alpha := metrics.EMAAlpha
+		oldAvg := float64(metrics.AverageWaitTime)
+		newWait := float64(waitTime)
+		metrics.AverageWaitTime = time.Duration(alpha*newWait + (1-alpha)*oldAvg)
+	}
+
+	metrics.DispatchedCount++
 }
 
 // cleanupLoop runs periodically to remove inactive workloads from the registry.

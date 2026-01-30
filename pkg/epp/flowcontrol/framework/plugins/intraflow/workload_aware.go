@@ -162,7 +162,8 @@ func (p *WorkloadAwarePolicy) Less(a, b types.QueueItemAccessor) bool {
 }
 
 // computeScore calculates the priority score for a queue item.
-// The score is a weighted combination of normalized wait time, criticality, and request rate penalty.
+// The score is a weighted combination of normalized average wait time, criticality, and request rate penalty.
+// Uses the workload's historical average wait time (EMA) instead of individual request wait time.
 func (p *WorkloadAwarePolicy) computeScore(item types.QueueItemAccessor, now time.Time) float64 {
 	// Extract workload context from metadata
 	metadata := item.OriginalRequest().GetMetadata()
@@ -177,22 +178,25 @@ func (p *WorkloadAwarePolicy) computeScore(item types.QueueItemAccessor, now tim
 		criticality = 3 // Default to medium priority
 	}
 
-	// Get request rate from registry
+	// Get workload metrics from registry
+	avgWaitTime := 0.0
 	requestRate := 0.0
 	if p.workloadRegistry != nil {
+		// Use workload's AVERAGE wait time instead of individual request wait time
+		metrics := p.workloadRegistry.GetMetrics(workloadID)
+		if metrics != nil {
+			avgWaitTime = metrics.AverageWaitTime.Seconds()
+		}
 		requestRate = p.workloadRegistry.GetRequestRate(workloadID)
 	}
 
-	// Compute wait time in seconds
-	waitTime := now.Sub(item.EnqueueTime()).Seconds()
-
 	// Normalize all components to [0, 1] range
-	normalizedWait := math.Min(waitTime/p.config.MaxWaitTimeSeconds, 1.0)
+	normalizedWait := math.Min(avgWaitTime/p.config.MaxWaitTimeSeconds, 1.0)
 	normalizedCrit := float64(criticality) / 5.0
 	normalizedRate := math.Min(requestRate/p.config.MaxRequestRate, 1.0)
 
 	// Compute weighted score
-	// Higher wait time → higher priority (anti-starvation)
+	// Higher average wait time → higher priority (anti-starvation for workload)
 	// Higher criticality → higher priority (user intent)
 	// Higher request rate → lower priority (fairness)
 	score := (normalizedWait * p.config.WaitTimeWeight) +

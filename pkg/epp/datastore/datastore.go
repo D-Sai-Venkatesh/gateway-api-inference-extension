@@ -75,6 +75,7 @@ type Datastore interface {
 	// Workload operations
 	WorkloadHandleNewRequest(workloadID string)
 	WorkloadHandleCompletedRequest(workloadID string)
+	WorkloadHandleDispatchedRequest(workloadID string, waitTime time.Duration)
 	WorkloadGetRequestRate(workloadID string) float64
 	WorkloadGetMetrics(workloadID string) *WorkloadMetrics
 	GetWorkloadRegistry() *WorkloadRegistry
@@ -155,6 +156,11 @@ func (ds *datastore) WorkloadHandleNewRequest(workloadID string) {
 // WorkloadHandleCompletedRequest decrements the active request count for the given workload.
 func (ds *datastore) WorkloadHandleCompletedRequest(workloadID string) {
 	ds.workloadRegistry.DecrementActive(workloadID)
+}
+
+// WorkloadHandleDispatchedRequest records the dispatch time for workload average wait time tracking.
+func (ds *datastore) WorkloadHandleDispatchedRequest(workloadID string, waitTime time.Duration) {
+	ds.workloadRegistry.RecordDispatch(workloadID, waitTime)
 }
 
 // WorkloadGetRequestRate returns the current request rate (requests per second) for the given workload.
