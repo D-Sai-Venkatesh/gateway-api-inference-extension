@@ -159,8 +159,7 @@ func (fcac *FlowControlAdmissionController) Admit(
 	logger.V(logutil.TRACE).Info("Executing FlowControlAdmissionController",
 		"requestID", reqCtx.SchedulingRequest.RequestId, "priority", priority, "fairnessID", reqCtx.FairnessID)
 
-	// Convert datastore.WorkloadContext to types.WorkloadContext if present
-	var workloadCtx types.WorkloadContext
+	var workloadCtx *workloadInfo
 	if reqCtx.WorkloadContext != nil {
 		workloadCtx = &workloadInfo{
 			workloadID:  reqCtx.WorkloadContext.WorkloadID,
