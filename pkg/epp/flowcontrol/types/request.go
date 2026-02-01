@@ -20,6 +20,16 @@ import (
 	"time"
 )
 
+// WorkloadContext provides workload identity and priority information for workload-aware routing.
+// This interface allows for future extensibility while maintaining type safety.
+type WorkloadContext interface {
+	// GetWorkloadID returns the unique identifier for this workload.
+	GetWorkloadID() string
+
+	// GetCriticality returns the priority level (1-5, where 5 is highest priority).
+	GetCriticality() int
+}
+
 // FlowControlRequest is the contract for an incoming request submitted to the `controller.FlowController`. It
 // represents the "raw" user-provided data and context for a single unit of work.
 //
@@ -52,6 +62,14 @@ type FlowControlRequest interface {
 	// This data is passed transparently to components like the contracts.PodLocator to resolve resources (candidate pods)
 	// lazily during the dispatch cycle.
 	GetMetadata() map[string]any
+
+	// GetWorkloadContext returns the workload identity and priority information for workload-aware routing.
+	// This provides type-safe access to workload context without requiring extraction from the metadata map.
+	// Returns nil if no workload context is available.
+	//
+	// This method enables the WorkloadAwarePolicy to access workload information directly, eliminating the need
+	// for metadata map casting and improving type safety.
+	GetWorkloadContext() WorkloadContext
 
 	// --- Passthrough for Observability ---
 

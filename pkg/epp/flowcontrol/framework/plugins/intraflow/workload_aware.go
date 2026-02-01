@@ -165,17 +165,21 @@ func (p *WorkloadAwarePolicy) Less(a, b types.QueueItemAccessor) bool {
 // The score is a weighted combination of normalized average wait time, criticality, and request rate penalty.
 // Uses the workload's historical average wait time (EMA) instead of individual request wait time.
 func (p *WorkloadAwarePolicy) computeScore(item types.QueueItemAccessor, now time.Time) float64 {
-	// Extract workload context from metadata
-	metadata := item.OriginalRequest().GetMetadata()
-	workloadID, _ := metadata["workload_id"].(string)
-	criticality, _ := metadata["criticality"].(int)
+	// Get workload context directly from request
+	workloadCtx := item.OriginalRequest().GetWorkloadContext()
 
-	// Default values if metadata is missing
-	if workloadID == "" {
-		workloadID = "default"
-	}
-	if criticality < 1 || criticality > 5 {
-		criticality = 3 // Default to medium priority
+	// Default values if no workload context
+	workloadID := "default"
+	criticality := 3 // Default to medium priority
+
+	if workloadCtx != nil {
+		workloadID = workloadCtx.GetWorkloadID()
+		criticality = workloadCtx.GetCriticality()
+
+		// Validate criticality range
+		if criticality < 1 || criticality > 5 {
+			criticality = 3
+		}
 	}
 
 	// Get workload metrics from registry

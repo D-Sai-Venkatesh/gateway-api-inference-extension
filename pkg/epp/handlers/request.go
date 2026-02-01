@@ -94,14 +94,6 @@ func (s *StreamingServer) HandleRequestHeaders(ctx context.Context, reqCtx *Requ
 	// Extract and parse workload context from X-Workload-Context header
 	reqCtx.WorkloadContext = extractWorkloadContext(ctx, reqCtx.Request.Headers)
 
-	// Copy workload context into metadata for flow control layer
-	// This allows the WorkloadAwarePolicy comparator to access workload information
-	// when computing priority scores for request ordering
-	if reqCtx.WorkloadContext != nil {
-		reqCtx.Request.Metadata["workload_id"] = reqCtx.WorkloadContext.WorkloadID
-		reqCtx.Request.Metadata["criticality"] = reqCtx.WorkloadContext.Criticality
-	}
-
 	return nil
 }
 

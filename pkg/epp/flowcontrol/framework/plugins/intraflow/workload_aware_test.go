@@ -63,6 +63,7 @@ type mockFlowControlRequest struct {
 	inferencePoolName   string
 	modelName           string
 	targetModelName     string
+	workloadContext     types.WorkloadContext
 }
 
 func (m *mockFlowControlRequest) FlowKey() types.FlowKey {
@@ -83,6 +84,10 @@ func (m *mockFlowControlRequest) ID() string {
 
 func (m *mockFlowControlRequest) GetMetadata() map[string]any {
 	return m.metadata
+}
+
+func (m *mockFlowControlRequest) GetWorkloadContext() types.WorkloadContext {
+	return m.workloadContext
 }
 
 func (m *mockFlowControlRequest) InferencePoolName() string {

@@ -34,6 +34,7 @@ type MockFlowControlRequest struct {
 	InferencePoolNameV   string
 	ModelNameV           string
 	TargetModelNameV     string
+	WorkloadContextV     types.WorkloadContext
 }
 
 // MockRequestOption is a functional option for configuring a MockFlowControlRequest.
@@ -81,14 +82,15 @@ func NewMockFlowControlRequest(
 	return m
 }
 
-func (m *MockFlowControlRequest) FlowKey() types.FlowKey             { return m.FlowKeyV }
-func (m *MockFlowControlRequest) ByteSize() uint64                   { return m.ByteSizeV }
-func (m *MockFlowControlRequest) InitialEffectiveTTL() time.Duration { return m.InitialEffectiveTTLV }
-func (m *MockFlowControlRequest) ID() string                         { return m.IDV }
-func (m *MockFlowControlRequest) GetMetadata() map[string]any        { return m.MetadataV }
-func (m *MockFlowControlRequest) InferencePoolName() string          { return m.InferencePoolNameV }
-func (m *MockFlowControlRequest) ModelName() string                  { return m.ModelNameV }
-func (m *MockFlowControlRequest) TargetModelName() string            { return m.TargetModelNameV }
+func (m *MockFlowControlRequest) FlowKey() types.FlowKey                  { return m.FlowKeyV }
+func (m *MockFlowControlRequest) ByteSize() uint64                        { return m.ByteSizeV }
+func (m *MockFlowControlRequest) InitialEffectiveTTL() time.Duration      { return m.InitialEffectiveTTLV }
+func (m *MockFlowControlRequest) ID() string                              { return m.IDV }
+func (m *MockFlowControlRequest) GetMetadata() map[string]any             { return m.MetadataV }
+func (m *MockFlowControlRequest) GetWorkloadContext() types.WorkloadContext { return m.WorkloadContextV }
+func (m *MockFlowControlRequest) InferencePoolName() string               { return m.InferencePoolNameV }
+func (m *MockFlowControlRequest) ModelName() string                       { return m.ModelNameV }
+func (m *MockFlowControlRequest) TargetModelName() string                 { return m.TargetModelNameV }
 
 var _ types.FlowControlRequest = &MockFlowControlRequest{}
 

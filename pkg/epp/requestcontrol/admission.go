@@ -159,6 +159,15 @@ func (fcac *FlowControlAdmissionController) Admit(
 	logger.V(logutil.TRACE).Info("Executing FlowControlAdmissionController",
 		"requestID", reqCtx.SchedulingRequest.RequestId, "priority", priority, "fairnessID", reqCtx.FairnessID)
 
+	// Convert datastore.WorkloadContext to types.WorkloadContext if present
+	var workloadCtx types.WorkloadContext
+	if reqCtx.WorkloadContext != nil {
+		workloadCtx = &workloadInfo{
+			workloadID:  reqCtx.WorkloadContext.WorkloadID,
+			criticality: reqCtx.WorkloadContext.Criticality,
+		}
+	}
+
 	fcReq := &flowControlRequest{
 		requestID:         reqCtx.SchedulingRequest.RequestId,
 		fairnessID:        reqCtx.FairnessID,
@@ -168,6 +177,7 @@ func (fcac *FlowControlAdmissionController) Admit(
 		inferencePoolName: fcac.poolName,
 		modelName:         reqCtx.IncomingModelName,
 		targetModelName:   reqCtx.TargetModelName,
+		workloadContext:   workloadCtx,
 	}
 
 	outcome, err := fcac.flowController.EnqueueAndWait(ctx, fcReq)
@@ -175,6 +185,26 @@ func (fcac *FlowControlAdmissionController) Admit(
 		"requestID", reqCtx.SchedulingRequest.RequestId, "outcome", outcome, "error", err)
 	return translateFlowControlOutcome(outcome, err)
 }
+
+// workloadInfo implements the types.WorkloadContext interface.
+// It represents workload information extracted from the X-Workload-Context header.
+type workloadInfo struct {
+	workloadID  string
+	criticality int
+}
+
+// GetWorkloadID implements types.WorkloadContext.
+func (w *workloadInfo) GetWorkloadID() string {
+	return w.workloadID
+}
+
+// GetCriticality implements types.WorkloadContext.
+func (w *workloadInfo) GetCriticality() int {
+	return w.criticality
+}
+
+// Ensure workloadInfo implements types.WorkloadContext.
+var _ types.WorkloadContext = &workloadInfo{}
 
 // flowControlRequest is an adapter that implements the types.FlowControlRequest interface.
 type flowControlRequest struct {
@@ -186,17 +216,19 @@ type flowControlRequest struct {
 	inferencePoolName string
 	modelName         string
 	targetModelName   string
+	workloadContext   types.WorkloadContext
 }
 
 var _ types.FlowControlRequest = &flowControlRequest{}
 
-func (r *flowControlRequest) ID() string                         { return r.requestID }
-func (r *flowControlRequest) InitialEffectiveTTL() time.Duration { return 0 } // Use controller default.
-func (r *flowControlRequest) ByteSize() uint64                   { return r.requestByteSize }
-func (r *flowControlRequest) GetMetadata() map[string]any        { return r.reqMetadata }
-func (r *flowControlRequest) InferencePoolName() string          { return r.inferencePoolName }
-func (r *flowControlRequest) ModelName() string                  { return r.modelName }
-func (r *flowControlRequest) TargetModelName() string            { return r.targetModelName }
+func (r *flowControlRequest) ID() string                                { return r.requestID }
+func (r *flowControlRequest) InitialEffectiveTTL() time.Duration        { return 0 } // Use controller default.
+func (r *flowControlRequest) ByteSize() uint64                          { return r.requestByteSize }
+func (r *flowControlRequest) GetMetadata() map[string]any               { return r.reqMetadata }
+func (r *flowControlRequest) GetWorkloadContext() types.WorkloadContext { return r.workloadContext }
+func (r *flowControlRequest) InferencePoolName() string                 { return r.inferencePoolName }
+func (r *flowControlRequest) ModelName() string                         { return r.modelName }
+func (r *flowControlRequest) TargetModelName() string                   { return r.targetModelName }
 func (r *flowControlRequest) FlowKey() types.FlowKey {
 	return types.FlowKey{ID: r.fairnessID, Priority: r.priority}
 }
