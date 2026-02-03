@@ -1,5 +1,49 @@
 # Workload Registry - Datastore Access Pattern
 
+## High-Level Overview
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant Handler as Request Handler
+    participant Datastore as Datastore<br/>(WorkloadRegistry)
+    participant Director
+    participant FlowControl as Flow Control
+    participant Policy as WorkloadAwarePolicy
+    participant Backend
+
+    Client->>Handler: HTTP Request + X-Workload-Context
+    
+    Note over Handler,Datastore: 📍 Hook 1: Track New Request
+    Handler->>Datastore: WorkloadHandleNewRequest(workloadID)
+    Note right of Datastore: Increment active count<br/>Update request rate
+    
+    Handler->>Director: HandleRequest(reqCtx)
+    Director->>FlowControl: Schedule & prioritize
+    
+    Note over FlowControl,Policy: 🎯 Priority Evaluation
+    loop Prioritize Requests
+        Policy->>Datastore: WorkloadGetMetrics(workloadID)
+        Datastore-->>Policy: Metrics (wait time, rate)
+        Policy->>Policy: Compute priority score
+    end
+    
+    FlowControl-->>Director: Highest priority selected
+    Director-->>Handler: Dispatched with target pod
+    
+    Note over Handler,Datastore: 📍 Hook 2: Track Dispatch
+    Handler->>Datastore: WorkloadHandleDispatchedRequest(workloadID, waitTime)
+    Note right of Datastore: Update average wait time
+    
+    Handler->>Backend: Forward to target pod
+    Backend-->>Handler: Response
+    Handler-->>Client: HTTP Response
+    
+    Note over Handler,Datastore: 📍 Hook 3: Track Completion
+    Handler->>Datastore: WorkloadHandleCompletedRequest(workloadID)
+    Note right of Datastore: Decrement active count
+```
+
 ## Request Lifecycle with Datastore Interactions
 
 ```mermaid

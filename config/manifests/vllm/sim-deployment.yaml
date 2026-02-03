@@ -3,7 +3,7 @@ kind: Deployment
 metadata:
   name: vllm-llama3-8b-instruct
 spec:
-  replicas: 3
+  replicas: 1
   selector:
     matchLabels:
       app: vllm-llama3-8b-instruct
@@ -25,6 +25,12 @@ spec:
         - "2"
         - --lora-modules
         - '{"name": "food-review-1"}'
+        - --time-to-first-token
+        - "200"
+        - --inter-token-latency
+        - "50"
+        - --max-num-seqs
+        - "3"
         env:
         - name: POD_NAME
           valueFrom:

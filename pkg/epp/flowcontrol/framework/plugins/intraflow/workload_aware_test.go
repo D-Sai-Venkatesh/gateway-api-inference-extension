@@ -122,7 +122,7 @@ func createMockItem(workloadID string, criticality int, enqueueTime time.Time) *
 func TestWorkloadAwarePolicy_Name(t *testing.T) {
 	registry := datastore.NewWorkloadRegistry(60 * time.Second)
 	policy := NewWorkloadAwarePolicyWithDefaults(registry)
-	
+
 	if policy.Name() != WorkloadAwareOrderingPolicyType {
 		t.Errorf("Expected name %s, got %s", WorkloadAwareOrderingPolicyType, policy.Name())
 	}
@@ -131,12 +131,12 @@ func TestWorkloadAwarePolicy_Name(t *testing.T) {
 func TestWorkloadAwarePolicy_RequiredQueueCapabilities(t *testing.T) {
 	registry := datastore.NewWorkloadRegistry(60 * time.Second)
 	policy := NewWorkloadAwarePolicyWithDefaults(registry)
-	
+
 	caps := policy.RequiredQueueCapabilities()
 	if len(caps) != 1 {
 		t.Fatalf("Expected 1 capability, got %d", len(caps))
 	}
-	
+
 	if caps[0] != framework.CapabilityPriorityConfigurable {
 		t.Errorf("Expected CapabilityPriorityConfigurable, got %v", caps[0])
 	}
@@ -145,10 +145,10 @@ func TestWorkloadAwarePolicy_RequiredQueueCapabilities(t *testing.T) {
 func TestWorkloadAwarePolicy_Less_NilHandling(t *testing.T) {
 	registry := datastore.NewWorkloadRegistry(60 * time.Second)
 	policy := NewWorkloadAwarePolicyWithDefaults(registry)
-	
+
 	now := time.Now()
 	item := createMockItem("workload-a", 3, now)
-	
+
 	tests := []struct {
 		name     string
 		a        types.QueueItemAccessor
@@ -174,7 +174,7 @@ func TestWorkloadAwarePolicy_Less_NilHandling(t *testing.T) {
 			expected: true,
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := policy.Less(tt.a, tt.b)
@@ -188,14 +188,14 @@ func TestWorkloadAwarePolicy_Less_NilHandling(t *testing.T) {
 func TestWorkloadAwarePolicy_Less_CriticalityOrdering(t *testing.T) {
 	registry := datastore.NewWorkloadRegistry(60 * time.Second)
 	policy := NewWorkloadAwarePolicyWithDefaults(registry)
-	
+
 	now := time.Now()
-	
+
 	// Create items with different criticality levels (same enqueue time, no request rate)
 	lowPriority := createMockItem("workload-low", 1, now)
 	mediumPriority := createMockItem("workload-medium", 3, now)
 	highPriority := createMockItem("workload-high", 5, now)
-	
+
 	tests := []struct {
 		name     string
 		a        types.QueueItemAccessor
@@ -232,7 +232,7 @@ func TestWorkloadAwarePolicy_Less_CriticalityOrdering(t *testing.T) {
 			desc:     "Low criticality should have lower priority than high",
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := policy.Less(tt.a, tt.b)
@@ -246,19 +246,19 @@ func TestWorkloadAwarePolicy_Less_CriticalityOrdering(t *testing.T) {
 func TestWorkloadAwarePolicy_Less_WaitTimeBoost(t *testing.T) {
 	registry := datastore.NewWorkloadRegistry(60 * time.Second)
 	policy := NewWorkloadAwarePolicyWithDefaults(registry)
-	
+
 	now := time.Now()
-	
+
 	// Create items with same criticality but different wait times
 	oldRequest := createMockItem("workload-old", 3, now.Add(-30*time.Second))
 	newRequest := createMockItem("workload-new", 3, now)
-	
+
 	// Old request should have higher priority due to wait time boost
 	result := policy.Less(oldRequest, newRequest)
 	if !result {
 		t.Error("Older request should have higher priority due to wait time boost")
 	}
-	
+
 	// Verify the reverse is false
 	result = policy.Less(newRequest, oldRequest)
 	if result {
@@ -269,19 +269,19 @@ func TestWorkloadAwarePolicy_Less_WaitTimeBoost(t *testing.T) {
 func TestWorkloadAwarePolicy_Less_RequestRatePenalty(t *testing.T) {
 	registry := datastore.NewWorkloadRegistry(60 * time.Second)
 	policy := NewWorkloadAwarePolicyWithDefaults(registry)
-	
+
 	now := time.Now()
-	
+
 	// Simulate high request rate for workload-flood
 	for i := 0; i < 50; i++ {
-		registry.IncrementActive("workload-flood")
-		registry.DecrementActive("workload-flood")
+		registry.WorkloadHandleNewRequest("workload-flood")
+		registry.WorkloadHandleCompletedRequest("workload-flood")
 	}
-	
+
 	// Create items with same criticality and enqueue time
 	floodWorkload := createMockItem("workload-flood", 4, now)
 	fairWorkload := createMockItem("workload-fair", 4, now)
-	
+
 	// Fair workload should have higher priority despite same criticality
 	// because flood workload has high request rate
 	result := policy.Less(fairWorkload, floodWorkload)
@@ -293,14 +293,14 @@ func TestWorkloadAwarePolicy_Less_RequestRatePenalty(t *testing.T) {
 func TestWorkloadAwarePolicy_Less_CompositeScoring(t *testing.T) {
 	registry := datastore.NewWorkloadRegistry(60 * time.Second)
 	policy := NewWorkloadAwarePolicyWithDefaults(registry)
-	
+
 	now := time.Now()
-	
+
 	// Scenario: Low criticality but very old request vs high criticality new request
 	// The wait time boost should eventually overcome the criticality difference
 	veryOldLowPriority := createMockItem("workload-old-low", 1, now.Add(-60*time.Second))
 	newHighPriority := createMockItem("workload-new-high", 5, now)
-	
+
 	// With default weights (wait=0.4, crit=0.4, rate=0.2):
 	// Old low: (60/60)*0.4 + (1/5)*0.4 - 0 = 0.4 + 0.08 = 0.48
 	// New high: (0/60)*0.4 + (5/5)*0.4 - 0 = 0 + 0.4 = 0.4
@@ -314,13 +314,13 @@ func TestWorkloadAwarePolicy_Less_CompositeScoring(t *testing.T) {
 func TestWorkloadAwarePolicy_Less_TieBreaker(t *testing.T) {
 	registry := datastore.NewWorkloadRegistry(60 * time.Second)
 	policy := NewWorkloadAwarePolicyWithDefaults(registry)
-	
+
 	now := time.Now()
-	
+
 	// Create items with identical scores but different enqueue times
 	earlier := createMockItem("workload-a", 3, now.Add(-1*time.Second))
 	later := createMockItem("workload-b", 3, now)
-	
+
 	// Earlier enqueue time should win (FCFS tie-breaker)
 	result := policy.Less(earlier, later)
 	if !result {
@@ -331,9 +331,9 @@ func TestWorkloadAwarePolicy_Less_TieBreaker(t *testing.T) {
 func TestWorkloadAwarePolicy_ComputeScore_MissingMetadata(t *testing.T) {
 	registry := datastore.NewWorkloadRegistry(60 * time.Second)
 	policy := NewWorkloadAwarePolicyWithDefaults(registry)
-	
+
 	now := time.Now()
-	
+
 	// Create item with missing metadata
 	item := &mockQueueItem{
 		enqueueTime:  now,
@@ -345,10 +345,10 @@ func TestWorkloadAwarePolicy_ComputeScore_MissingMetadata(t *testing.T) {
 			metadata: map[string]any{}, // Empty metadata
 		},
 	}
-	
+
 	// Should use default values (workload_id="default", criticality=3)
 	score := policy.computeScore(item, now)
-	
+
 	// With defaults: wait=0, crit=3/5=0.6, rate=0
 	// Score = 0*0.4 + 0.6*0.4 - 0*0.2 = 0.24
 	expectedScore := 0.24
@@ -360,9 +360,9 @@ func TestWorkloadAwarePolicy_ComputeScore_MissingMetadata(t *testing.T) {
 func TestWorkloadAwarePolicy_ComputeScore_InvalidCriticality(t *testing.T) {
 	registry := datastore.NewWorkloadRegistry(60 * time.Second)
 	policy := NewWorkloadAwarePolicyWithDefaults(registry)
-	
+
 	now := time.Now()
-	
+
 	tests := []struct {
 		name        string
 		criticality int
@@ -384,12 +384,12 @@ func TestWorkloadAwarePolicy_ComputeScore_InvalidCriticality(t *testing.T) {
 			desc:        "Criticality 6 should default to 3",
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			item := createMockItem("workload-test", tt.criticality, now)
 			score := policy.computeScore(item, now)
-			
+
 			// Should use default criticality=3
 			// Score = 0*0.4 + (3/5)*0.4 - 0*0.2 = 0.24
 			expectedScore := 0.24
@@ -402,7 +402,7 @@ func TestWorkloadAwarePolicy_ComputeScore_InvalidCriticality(t *testing.T) {
 
 func TestWorkloadAwarePolicy_CustomConfig(t *testing.T) {
 	registry := datastore.NewWorkloadRegistry(60 * time.Second)
-	
+
 	// Create policy with custom weights (prioritize criticality more)
 	config := WorkloadAwarePolicyConfig{
 		WaitTimeWeight:     0.2,
@@ -412,13 +412,13 @@ func TestWorkloadAwarePolicy_CustomConfig(t *testing.T) {
 		MaxRequestRate:     100.0,
 	}
 	policy := NewWorkloadAwarePolicy(registry, config)
-	
+
 	now := time.Now()
-	
+
 	// With higher criticality weight, high-priority should win even with less wait time
 	oldLowPriority := createMockItem("workload-old-low", 1, now.Add(-30*time.Second))
 	newHighPriority := createMockItem("workload-new-high", 5, now)
-	
+
 	// Old low: (30/60)*0.2 + (1/5)*0.6 - 0 = 0.1 + 0.12 = 0.22
 	// New high: (0/60)*0.2 + (5/5)*0.6 - 0 = 0 + 0.6 = 0.6
 	// New high should win with higher criticality weight
@@ -430,26 +430,26 @@ func TestWorkloadAwarePolicy_CustomConfig(t *testing.T) {
 
 func TestWorkloadAwarePolicyFactory(t *testing.T) {
 	registry := datastore.NewWorkloadRegistry(60 * time.Second)
-	
+
 	t.Run("factory with defaults", func(t *testing.T) {
 		factory := NewWorkloadAwarePolicyFactory(registry)
 		policy := factory.CreatePolicy()
-		
+
 		if policy == nil {
 			t.Fatal("Factory should create non-nil policy")
 		}
-		
+
 		// Cast to concrete type to access Name()
 		waPolicy, ok := policy.(*WorkloadAwarePolicy)
 		if !ok {
 			t.Fatal("Factory should create WorkloadAwarePolicy")
 		}
-		
+
 		if waPolicy.Name() != WorkloadAwareOrderingPolicyType {
 			t.Errorf("Expected policy name %s, got %s", WorkloadAwareOrderingPolicyType, waPolicy.Name())
 		}
 	})
-	
+
 	t.Run("factory with custom config", func(t *testing.T) {
 		config := WorkloadAwarePolicyConfig{
 			WaitTimeWeight:     0.5,
@@ -460,11 +460,11 @@ func TestWorkloadAwarePolicyFactory(t *testing.T) {
 		}
 		factory := NewWorkloadAwarePolicyFactoryWithConfig(registry, config)
 		policy := factory.CreatePolicy()
-		
+
 		if policy == nil {
 			t.Fatal("Factory should create non-nil policy")
 		}
-		
+
 		// Verify custom config is used
 		waPolicy := policy.(*WorkloadAwarePolicy)
 		if waPolicy.config.WaitTimeWeight != 0.5 {
@@ -476,11 +476,11 @@ func TestWorkloadAwarePolicyFactory(t *testing.T) {
 func TestWorkloadAwarePolicy_NilRegistry(t *testing.T) {
 	// Policy should handle nil registry gracefully
 	policy := NewWorkloadAwarePolicyWithDefaults(nil)
-	
+
 	now := time.Now()
 	itemA := createMockItem("workload-a", 3, now)
 	itemB := createMockItem("workload-b", 4, now)
-	
+
 	// Should not panic and should still compare based on criticality
 	result := policy.Less(itemB, itemA)
 	if !result {
@@ -490,7 +490,7 @@ func TestWorkloadAwarePolicy_NilRegistry(t *testing.T) {
 
 func TestDefaultWorkloadAwarePolicyConfig(t *testing.T) {
 	config := DefaultWorkloadAwarePolicyConfig()
-	
+
 	if config.WaitTimeWeight != 0.4 {
 		t.Errorf("Expected WaitTimeWeight 0.4, got %f", config.WaitTimeWeight)
 	}

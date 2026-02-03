@@ -72,7 +72,7 @@ func TestIncrementActive(t *testing.T) {
 	workloadID := "test-workload"
 
 	// First increment
-	wr.IncrementActive(workloadID)
+	wr.WorkloadHandleNewRequest(workloadID)
 
 	metrics := wr.GetMetrics(workloadID)
 	if metrics == nil {
@@ -92,7 +92,7 @@ func TestIncrementActive(t *testing.T) {
 	}
 
 	// Second increment
-	wr.IncrementActive(workloadID)
+	wr.WorkloadHandleNewRequest(workloadID)
 
 	metrics = wr.GetMetrics(workloadID)
 	if metrics.TotalRequests != 2 {
@@ -115,8 +115,8 @@ func TestDecrementActive(t *testing.T) {
 	workloadID := "test-workload"
 
 	// Increment first
-	wr.IncrementActive(workloadID)
-	wr.IncrementActive(workloadID)
+	wr.WorkloadHandleNewRequest(workloadID)
+	wr.WorkloadHandleNewRequest(workloadID)
 
 	metrics := wr.GetMetrics(workloadID)
 	if metrics.ActiveRequests != 2 {
@@ -124,7 +124,7 @@ func TestDecrementActive(t *testing.T) {
 	}
 
 	// Decrement
-	wr.DecrementActive(workloadID)
+	wr.WorkloadHandleCompletedRequest(workloadID)
 
 	metrics = wr.GetMetrics(workloadID)
 	if metrics.ActiveRequests != 1 {
@@ -132,7 +132,7 @@ func TestDecrementActive(t *testing.T) {
 	}
 
 	// Decrement again
-	wr.DecrementActive(workloadID)
+	wr.WorkloadHandleCompletedRequest(workloadID)
 
 	metrics = wr.GetMetrics(workloadID)
 	if metrics.ActiveRequests != 0 {
@@ -140,7 +140,7 @@ func TestDecrementActive(t *testing.T) {
 	}
 
 	// Decrement below zero should not go negative
-	wr.DecrementActive(workloadID)
+	wr.WorkloadHandleCompletedRequest(workloadID)
 
 	metrics = wr.GetMetrics(workloadID)
 	if metrics.ActiveRequests != 0 {
@@ -153,7 +153,7 @@ func TestDecrementActive_NonExistentWorkload(t *testing.T) {
 	defer wr.Stop()
 
 	// Should not panic when decrementing non-existent workload
-	wr.DecrementActive("non-existent")
+	wr.WorkloadHandleCompletedRequest("non-existent")
 
 	metrics := wr.GetMetrics("non-existent")
 	if metrics != nil {
@@ -175,7 +175,7 @@ func TestGetRequestRate(t *testing.T) {
 
 	// Add some requests
 	for i := 0; i < 10; i++ {
-		wr.IncrementActive(workloadID)
+		wr.WorkloadHandleNewRequest(workloadID)
 		time.Sleep(10 * time.Millisecond)
 	}
 
@@ -198,7 +198,7 @@ func TestGetRequestRate_ExpiredWindow(t *testing.T) {
 	workloadID := "test-workload"
 
 	// Add requests
-	wr.IncrementActive(workloadID)
+	wr.WorkloadHandleNewRequest(workloadID)
 
 	// Wait for window to expire
 	time.Sleep(150 * time.Millisecond)
@@ -216,8 +216,8 @@ func TestSlidingWindowReset(t *testing.T) {
 	workloadID := "test-workload"
 
 	// Add requests in first window
-	wr.IncrementActive(workloadID)
-	wr.IncrementActive(workloadID)
+	wr.WorkloadHandleNewRequest(workloadID)
+	wr.WorkloadHandleNewRequest(workloadID)
 
 	metrics := wr.GetMetrics(workloadID)
 	if metrics.SlidingWindowRequests != 2 {
@@ -228,7 +228,7 @@ func TestSlidingWindowReset(t *testing.T) {
 	time.Sleep(150 * time.Millisecond)
 
 	// Add request in new window
-	wr.IncrementActive(workloadID)
+	wr.WorkloadHandleNewRequest(workloadID)
 
 	metrics = wr.GetMetrics(workloadID)
 	if metrics.SlidingWindowRequests != 1 {
@@ -255,7 +255,7 @@ func TestGetMetrics_ReturnsCopy(t *testing.T) {
 	defer wr.Stop()
 
 	workloadID := "test-workload"
-	wr.IncrementActive(workloadID)
+	wr.WorkloadHandleNewRequest(workloadID)
 
 	metrics1 := wr.GetMetrics(workloadID)
 	metrics2 := wr.GetMetrics(workloadID)
@@ -287,7 +287,7 @@ func TestConcurrency(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			for j := 0; j < incrementsPerGoroutine; j++ {
-				wr.IncrementActive(workloadID)
+				wr.WorkloadHandleNewRequest(workloadID)
 			}
 		}()
 	}
@@ -298,7 +298,7 @@ func TestConcurrency(t *testing.T) {
 			defer wg.Done()
 			for j := 0; j < incrementsPerGoroutine; j++ {
 				time.Sleep(1 * time.Millisecond) // Slight delay to allow increments
-				wr.DecrementActive(workloadID)
+				wr.WorkloadHandleCompletedRequest(workloadID)
 			}
 		}()
 	}
@@ -330,7 +330,7 @@ func TestMultipleWorkloads(t *testing.T) {
 	// Add requests to different workloads
 	for i, wl := range workloads {
 		for j := 0; j <= i; j++ {
-			wr.IncrementActive(wl)
+			wr.WorkloadHandleNewRequest(wl)
 		}
 	}
 
@@ -362,8 +362,8 @@ func TestCleanup(t *testing.T) {
 	workloadID := "cleanup-test"
 
 	// Add and complete a request
-	wr.IncrementActive(workloadID)
-	wr.DecrementActive(workloadID)
+	wr.WorkloadHandleNewRequest(workloadID)
+	wr.WorkloadHandleCompletedRequest(workloadID)
 
 	// Manually set last request time to be old
 	value, _ := wr.workloads.Load(workloadID)
@@ -388,7 +388,7 @@ func TestCleanup_ActiveWorkloadNotRemoved(t *testing.T) {
 	workloadID := "active-workload"
 
 	// Add request but don't complete it
-	wr.IncrementActive(workloadID)
+	wr.WorkloadHandleNewRequest(workloadID)
 
 	// Manually set last request time to be old
 	value, _ := wr.workloads.Load(workloadID)
@@ -429,7 +429,7 @@ func TestGetAllWorkloadIDs(t *testing.T) {
 	// Add workloads
 	workloads := []string{"wl-1", "wl-2", "wl-3"}
 	for _, wl := range workloads {
-		wr.IncrementActive(wl)
+		wr.WorkloadHandleNewRequest(wl)
 	}
 
 	ids = wr.GetAllWorkloadIDs()

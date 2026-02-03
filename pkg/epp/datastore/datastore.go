@@ -150,17 +150,17 @@ func (ds *datastore) Clear() {
 // WorkloadHandleNewRequest increments the active request count for the given workload.
 // It also updates the sliding window metrics and last request time.
 func (ds *datastore) WorkloadHandleNewRequest(workloadID string) {
-	ds.workloadRegistry.IncrementActive(workloadID)
+	ds.workloadRegistry.WorkloadHandleNewRequest(workloadID)
 }
 
 // WorkloadHandleCompletedRequest decrements the active request count for the given workload.
 func (ds *datastore) WorkloadHandleCompletedRequest(workloadID string) {
-	ds.workloadRegistry.DecrementActive(workloadID)
+	ds.workloadRegistry.WorkloadHandleCompletedRequest(workloadID)
 }
 
 // WorkloadHandleDispatchedRequest records the dispatch time for workload average wait time tracking.
 func (ds *datastore) WorkloadHandleDispatchedRequest(workloadID string, waitTime time.Duration) {
-	ds.workloadRegistry.RecordDispatch(workloadID, waitTime)
+	ds.workloadRegistry.WorkloadHandleDispatchedRequest(workloadID, waitTime)
 }
 
 // WorkloadGetRequestRate returns the current request rate (requests per second) for the given workload.
