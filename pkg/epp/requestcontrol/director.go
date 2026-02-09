@@ -165,10 +165,6 @@ func (d *Director) HandleRequest(ctx context.Context, reqCtx *handlers.RequestCo
 	ctx = log.IntoContext(ctx, logger)
 	logger.V(logutil.DEBUG).Info("LLM request assembled")
 
-	if err := d.admissionController.Admit(ctx, reqCtx, *infObjective.Spec.Priority); err != nil {
-		logger.V(logutil.DEFAULT).Info("Request rejected by admission control", "error", err)
-		return reqCtx, err
-	}
 	candidatePods := d.podLocator.Locate(ctx, reqCtx.Request.Metadata)
 	if len(candidatePods) == 0 {
 		return reqCtx, errutil.Error{
@@ -182,6 +178,11 @@ func (d *Director) HandleRequest(ctx context.Context, reqCtx *handlers.RequestCo
 	if d.runPrepareDataPlugins(ctx, reqCtx.SchedulingRequest, snapshotOfCandidatePods) != nil {
 		// Don't fail the request if PrepareData plugins fail.
 		logger.V(logutil.DEFAULT).Error(err, "failed to prepare per request data")
+	}
+
+	if err := d.admissionController.Admit(ctx, reqCtx, *infObjective.Spec.Priority); err != nil {
+		logger.V(logutil.DEFAULT).Info("Request rejected by admission control", "error", err)
+		return reqCtx, err
 	}
 
 	// Run admit request plugins

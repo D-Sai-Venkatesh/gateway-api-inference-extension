@@ -70,6 +70,7 @@ import (
 	"sigs.k8s.io/gateway-api-inference-extension/pkg/epp/framework/plugins/scheduling/scorer"
 	"sigs.k8s.io/gateway-api-inference-extension/pkg/epp/framework/plugins/scheduling/scorer/predictedlatency"
 	"sigs.k8s.io/gateway-api-inference-extension/pkg/epp/framework/plugins/scheduling/scorer/prefix"
+	"sigs.k8s.io/gateway-api-inference-extension/pkg/epp/framework/plugins/workloadaware"
 	testfilter "sigs.k8s.io/gateway-api-inference-extension/pkg/epp/framework/plugins/scheduling/test/filter"
 	"sigs.k8s.io/gateway-api-inference-extension/pkg/epp/metrics"
 	"sigs.k8s.io/gateway-api-inference-extension/pkg/epp/metrics/collectors"
@@ -372,6 +373,7 @@ func setupDatastore(ctx context.Context, epFactory datalayer.EndpointFactory, mo
 
 // registerInTreePlugins registers the factory functions of all known plugins
 func (r *Runner) registerInTreePlugins() {
+	fwkplugin.Register(workloadaware.WorkloadAwarePluginType, workloadaware.WorkloadAwarePluginFactory)
 	fwkplugin.Register(prefix.PrefixCachePluginType, prefix.PrefixCachePluginFactory)
 	fwkplugin.Register(picker.MaxScorePickerType, picker.MaxScorePickerFactory)
 	fwkplugin.Register(picker.RandomPickerType, picker.RandomPickerFactory)
