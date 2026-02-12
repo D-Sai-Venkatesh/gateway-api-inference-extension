@@ -7,16 +7,22 @@ import (
 	"log"
 	"sync"
 	"time"
+
 	// "math"
 
 	"sigs.k8s.io/gateway-api-inference-extension/pkg/epp/framework/interface/flowcontrol"
 	"sigs.k8s.io/gateway-api-inference-extension/pkg/epp/framework/interface/plugin"
+	"sigs.k8s.io/gateway-api-inference-extension/pkg/epp/framework/interface/requestcontrol"
 	types "sigs.k8s.io/gateway-api-inference-extension/pkg/epp/framework/interface/scheduling"
+	"sigs.k8s.io/gateway-api-inference-extension/pkg/epp/framework/interface/datalayer"
 )
 
 const (
 	WorkloadAwarePluginType  = "workload-aware-policy"
+	// In request headers
 	WorkloadContextHeaderKey = "x-workload-context"
+	// In response headers
+	WorkloadIdResponseHeaderKey = "x-workload-id"
 
 	CriticalityWorkloadContextHintsKey = "criticality"
 	EnqueueTimeWorkloadContextHintsKey = "enqueue-time"
@@ -110,6 +116,34 @@ func extractWorkloadContext(request *types.LLMRequest, config *Config) *Workload
 	return &workloadCtx
 }
 
+// flow control ordering policy plugin
+func (p *Plugin) RequiredQueueCapabilities() []flowcontrol.QueueCapability {
+	return []flowcontrol.QueueCapability{flowcontrol.CapabilityPriorityConfigurable}
+}
+
+func (p *Plugin) Less(a, b flowcontrol.QueueItemAccessor) bool {
+	log.Printf("Less is called for request ID a: %s, request ID b: %s", a.OriginalRequest().ID(), b.OriginalRequest().ID())
+	scoreA := p.score(a.OriginalRequest().ID())
+	scoreB := p.score(b.OriginalRequest().ID())
+	log.Printf("Score for request ID a: %s, request ID b: %s, scoreA: %f, scoreB: %f", a.OriginalRequest().ID(), b.OriginalRequest().ID(), scoreA, scoreB)
+	return scoreA < scoreB
+}
+
+func (p *Plugin) score(requestId string) float64 {
+	log.Printf("Score is called for request ID: %s", requestId)
+	workloadCtxRaw, _ := p.workloadContextMap.LoadOrStore(requestId, NewDefaultWorkloadContext(p.config))
+	workloadCtx := workloadCtxRaw.(*WorkloadContext)
+
+	metrics := p.workloadRegistry.GetMetrics(workloadCtx.WorkloadID)
+	if metrics == nil {
+		return 0
+	}
+
+	score := 0.4 * float64(metrics.AverageWaitTime) + 0.4 * float64(workloadCtx.Hints[CriticalityWorkloadContextHintsKey].(int)) - 0.2 * float64(metrics.SlidingWindowRequests)
+	log.Printf("Score for request ID %s is %f, workload id %s, workload avg time %s, workload request rate %d,  criticality %d", requestId, score, workloadCtx.WorkloadID, metrics.AverageWaitTime, metrics.SlidingWindowRequests, workloadCtx.Hints[CriticalityWorkloadContextHintsKey].(int))
+	return score
+}
+
 // pre request data plugin
 func (p *Plugin) PreRequest(ctx context.Context, request *types.LLMRequest, schedulingResult *types.SchedulingResult) {
 	log.Printf("Pre Request Data: call for requestID:%s", request.RequestId)
@@ -126,31 +160,16 @@ func (p *Plugin) PreRequest(ctx context.Context, request *types.LLMRequest, sche
 	p.workloadRegistry.WorkloadHandleDispatchedRequest(workloadCtx.WorkloadID, time.Since(enqueueTime.(time.Time)))
 }
 
-// flow control ordering policy plugin
-func (p *Plugin) RequiredQueueCapabilities() []flowcontrol.QueueCapability {
-	return []flowcontrol.QueueCapability{flowcontrol.CapabilityPriorityConfigurable}
-}
-
-func (p *Plugin) Less(a, b flowcontrol.QueueItemAccessor) bool {
-	log.Printf("Less is called for request ID a: %s, request ID b: %s", a.OriginalRequest().ID(), b.OriginalRequest().ID())
-	scoreA := p.score(a.OriginalRequest().ID())
-	scoreB := p.score(b.OriginalRequest().ID())
-	log.Printf("Score for request ID a: %s, request ID b: %s, scoreA: %f, scoreB: %f", a.OriginalRequest().ID(), b.OriginalRequest().ID(), scoreA, scoreB)
-	return scoreA < scoreB
-}
-
-func (p *Plugin) score(requestId string) float64 {
-	log.Printf("Score is called for request ID: %s", requestId)
-	workloadCtxRaw, loaded := p.workloadContextMap.LoadOrStore(requestId, NewDefaultWorkloadContext(p.config))
-	workloadCtx := workloadCtxRaw.(*WorkloadContext)
-
-	metrics := p.workloadRegistry.GetMetrics(workloadCtx.WorkloadID)
-	if metrics == nil {
-		return 0
+// response received plugin
+func (p *Plugin) ResponseReceived(ctx context.Context, request *types.LLMRequest, response *requestcontrol.Response, targetEndpoint *datalayer.EndpointMetadata) {
+	workloadCtxRaw, exists := p.workloadContextMap.Load(request.RequestId)
+	if !exists {
+		return
 	}
 
-	score := 0.4 * float64(metrics.AverageWaitTime) + 0.4 * float64(workloadCtx.Hints[CriticalityWorkloadContextHintsKey].(int)) - 0.2 * float64(metrics.SlidingWindowRequests)
-	log.Printf("Score loaded %t", loaded)
-	return score
-}
+	workloadCtx := workloadCtxRaw.(*WorkloadContext)
+	if workloadCtx.WorkloadID != "" {
+		response.Headers[WorkloadIdResponseHeaderKey] = workloadCtx.WorkloadID
+	}
 
+}
