@@ -118,7 +118,7 @@ func (p *Plugin) Less(a, b flowcontrol.QueueItemAccessor) bool {
 	bID := b.OriginalRequest().ID()
 	aScore := p.score(aID)
 	bScore := p.score(bID)
-	result := aScore < bScore
+	result := aScore > bScore
 
 	logger.Info("Less: comparing queue priority",
 		"requestA", aID,
