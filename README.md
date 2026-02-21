@@ -5,6 +5,50 @@
 
 # Gateway API Inference Extension
 
+## Program-Aware Scheduling (Example Branch)
+
+This branch adds a sample program-aware scheduling plugin that demonstrates workload-aware request prioritization.
+
+### What changed
+
+- **`cmd/epp/runner/runner.go`** - Registers the `sample-program-aware-policy` plugin as an in-tree plugin.
+- **`config/manifests/vllm/sim-deployment.yaml`** - Updated to have --time-to-first-token and --inter-token-latency.
+- **`test/testdata/inferencepool-e2e.yaml`** - Configures the EPP with the program-aware plugin, flow control, and priority ordering via a `plugins-config` ConfigMap.
+- **`cmd/loadtest/`** - Load test tool that sends requests with `x-program-context` headers containing a program ID and random criticality (1-5).
+- **`pkg/epp/framework/plugins/programawaresample/`** - The plugin itself. Implements `PreAdmission`, `OrderingPolicy` (priority scoring based on wait time, criticality, and request count), `PreRequest`, `ResponseReceived`, and `ResponseComplete`.
+
+### Testing with E2E
+
+```bash
+# Keep the cluster alive after tests for manual load testing
+export E2E_PAUSE_ON_EXIT=true
+
+# Create a kind cluster
+kind create cluster
+
+# Run e2e tests (deploys EPP, simulator, and envoy)
+make test-e2e
+
+# port forward after the test cases are complete
+kc port-forward svc/envoy 8081 -n inf-ext-e2e &
+
+# Build and run the load test against the running cluster
+cd cmd/loadtest && go build -o loadtest .
+./loadtest \
+  -url http://localhost:8081/v1/completions \
+  -model meta-llama/Llama-3.1-8B-Instruct \
+  -num-workloads 5 \
+  -requests-per-workload 20 \
+  -parallel-per-workload 10
+```
+
+verify the plugin logs in 
+```bash
+kc logs deployment/vllm-llama3-8b-instruct-epp -n inf-ext-e2e > delete.log
+```
+
+---
+
 Gateway API Inference Extension optimizes self-hosting Generative Models on Kubernetes.
 This is achieved by leveraging Envoy's [External Processing] (ext-proc) to extend any gateway that supports both ext-proc and [Gateway API] into an **[inference gateway]**. 
 

@@ -26,6 +26,12 @@ spec:
         - "2"
         - --lora-modules
         - '{"name": "food-review-1"}'
+        - --time-to-first-token
+        - "200"
+        - --inter-token-latency
+        - "50"
+        - --max-num-seqs
+        - "5"
         env:
         - name: POD_NAME
           valueFrom:
