@@ -21,13 +21,20 @@ const (
 	ProgramAwarePluginType = "sample-program-aware-policy"
 
 	// headers
-	ProgramContextHeaderKey      = "x-program-context"
-	ProgramIdResponseHeaderKey   = "x-program-id"
+	ProgramContextHeaderKey    = "x-program-context"
+	ProgramIdResponseHeaderKey = "x-program-id"
 
-	// defaults
-	DefaultCriticality = 3
+	// Normalization caps for the scoring formula. Each input is divided by its
+	// cap to produce a value in [0, 1] before weighting. Values beyond the cap
+	// are clamped to 1.0.
+	maxAvgWaitTimeMs  = 5000.0 // 5 seconds
+	maxCriticality    = 10.0
+	maxTotalRequests  = 1000.0
 )
 
+// TODO: Add a periodic cleanup loop to evict entries for inactive workloads
+// from programMetrics and leaked entries from programContextPerRequest (e.g.
+// requests that were rejected by admission and never reached ResponseComplete).
 type Plugin struct {
 	typedName                plugin.TypedName
 	programMetrics           sync.Map
@@ -145,8 +152,16 @@ func (p *Plugin) score(requestID string) float64 {
 	metrics.mu.RLock()
 	defer metrics.mu.RUnlock()
 
-	avgWaitMs := metrics.AverageWaitTime.Milliseconds()
-	score := 0.4*float64(avgWaitMs) + 0.4*float64(programCtx.Hints.Criticality) - 0.2*float64(metrics.TotalRequests)
+	avgWaitMs := float64(metrics.AverageWaitTime.Milliseconds())
+
+	// Normalize each term to [0, 1] so the weights are meaningful.
+	normWait := normalize(avgWaitMs, maxAvgWaitTimeMs)
+	normCrit := normalize(float64(programCtx.Hints.Criticality), maxCriticality)
+	// TODO: TotalRequests is a monotonic counter; replace with a sliding-window
+	// request rate for a more accurate fairness signal.
+	normReqs := normalize(float64(metrics.TotalRequests), maxTotalRequests)
+
+	score := 0.4*normWait + 0.4*normCrit - 0.2*normReqs
 
 	log.Log.V(logutil.VERBOSE).Info("score: computed priority score",
 		"requestId", requestID,
@@ -154,10 +169,18 @@ func (p *Plugin) score(requestID string) float64 {
 		"criticality", programCtx.Hints.Criticality,
 		"avgWaitTimeMs", avgWaitMs,
 		"totalRequests", metrics.TotalRequests,
+		"normWait", normWait,
+		"normCrit", normCrit,
+		"normReqs", normReqs,
 		"score", score,
 	)
 
 	return score
+}
+
+// normalize maps v into [0, 1] by dividing by cap, clamping at boundaries.
+func normalize(v, cap float64) float64 {
+	return min(max(v/cap, 0), 1)
 }
 
 // pre request plugin method
@@ -197,7 +220,7 @@ func (p *Plugin) ResponseReceived(ctx context.Context, request *types.LLMRequest
 	}
 	programCtx := ctxRaw.(*ProgramContext)
 
-	if programCtx.ProgramID != "" {
+	if programCtx.ProgramID != "" && response.Headers != nil {
 		response.Headers[ProgramIdResponseHeaderKey] = programCtx.ProgramID
 	}
 

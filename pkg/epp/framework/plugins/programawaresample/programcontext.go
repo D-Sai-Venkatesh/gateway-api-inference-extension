@@ -23,10 +23,7 @@ type ProgramContext struct {
 func NewDefaultProgramContext() *ProgramContext {
 	return &ProgramContext{
 		ProgramID: uuid.NewString(),
-		Hints: Hints{
-			Criticality: DefaultCriticality,
-		},
-		Metadata: make(map[string]any),
+		Metadata:  make(map[string]any),
 	}
 }
 

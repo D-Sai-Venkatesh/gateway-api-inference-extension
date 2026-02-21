@@ -140,7 +140,7 @@ func (p *Plugin) Less(a, b flowcontrol.QueueItemAccessor) bool {
 	scoreA := p.score(a.OriginalRequest().ID())
 	scoreB := p.score(b.OriginalRequest().ID())
 	log.Printf("Score for request ID a: %s, request ID b: %s, scoreA: %f, scoreB: %f", a.OriginalRequest().ID(), b.OriginalRequest().ID(), scoreA, scoreB)
-	return scoreA < scoreB
+	return scoreA > scoreB
 }
 
 func (p *Plugin) score(requestId string) float64 {
