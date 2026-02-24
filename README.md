@@ -12,10 +12,13 @@ This branch adds a sample program-aware scheduling plugin that demonstrates prog
 ### Files Modified
 
 - **`pkg/epp/framework/plugins/programawaresample/`** - The plugin itself. Implements `PreAdmission`, `OrderingPolicy` (priority scoring based on wait time, criticality, and request count), `PreRequest`, `ResponseReceived`, and `ResponseComplete`.
-- **`cmd/epp/runner/runner.go`** - Calls `fwkplugin.Register()` in `registerInTreePlugins()` to make the plugin available by name.
-- **`config/manifests/vllm/sim-deployment.yaml`** - Adds `--time-to-first-token 200` and `--inter-token-latency 50` flags to the vLLM simulator so it produces realistic latency.
-- **`test/testdata/inferencepool-e2e.yaml`** - Adds a `plugins-config` ConfigMap that sets the plugin as the `orderingPolicyRef` in the flowControl defaultPriorityBand.
-- **`cmd/loadtest/`** - Workload simulator that sends concurrent requests with `x-program-context` headers (program ID + criticality 1–5) and reports latency/throughput.
+
+The following files are modified to demonstrate the plugin integration:
+
+- **`cmd/epp/runner/runner.go`** - Registers the plugin as an in-tree plugin.
+- **`config/manifests/vllm/sim-deployment.yaml`** - Adds simulator latency flags for realistic behavior.
+- **`test/testdata/inferencepool-e2e.yaml`** - Configures the EPP to use the plugin via a ConfigMap.
+- **`cmd/loadtest/`** - Load test tool that sends requests with program context headers.
 
 ### Testing with E2E
 
