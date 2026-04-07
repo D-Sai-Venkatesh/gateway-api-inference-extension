@@ -328,6 +328,23 @@ func (d *Director) prepareRequest(ctx context.Context, reqCtx *handlers.RequestC
 
 	d.runPreRequestPlugins(ctx, reqCtx.SchedulingRequest, result)
 
+	// Re-marshal the request body after PreRequest plugins run.
+	// Plugins may have mutated the PayloadMap in-place (e.g., injecting vLLM priority).
+	// This ensures reqCtx.Request.RawBody reflects those changes before Envoy receives it.
+	if reqCtx.SchedulingRequest != nil && reqCtx.SchedulingRequest.Body != nil {
+		if payloadMap, ok := reqCtx.SchedulingRequest.Body.Payload.(fwksched.PayloadMap); ok {
+			updatedBytes, err := json.Marshal(payloadMap)
+			if err != nil {
+				return reqCtx, errcommon.Error{
+					Code: errcommon.Internal,
+					Msg:  "error re-marshalling request body after PreRequest plugins",
+				}
+			}
+			reqCtx.Request.RawBody = updatedBytes
+			reqCtx.RequestSize = len(updatedBytes)
+		}
+	}
+
 	return reqCtx, nil
 }
 

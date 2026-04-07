@@ -158,6 +158,26 @@ func (m *mockAdmissionPlugin) AdmitRequest(ctx context.Context, request *fwksche
 	return m.denialError
 }
 
+// mockPreRequestPlugin is a PreRequest plugin that mutates the PayloadMap by inserting a test key.
+type mockPreRequestPlugin struct {
+	typedName fwkplugin.TypedName
+	key       string
+	value     any
+}
+
+func (m *mockPreRequestPlugin) TypedName() fwkplugin.TypedName {
+	return m.typedName
+}
+
+func (m *mockPreRequestPlugin) PreRequest(_ context.Context, request *fwksched.LLMRequest, _ *fwksched.SchedulingResult) {
+	if request == nil || request.Body == nil {
+		return
+	}
+	if payloadMap, ok := request.Body.Payload.(fwksched.PayloadMap); ok {
+		payloadMap[m.key] = m.value
+	}
+}
+
 type mockProducedDataType struct {
 	value int
 }
@@ -308,6 +328,8 @@ func TestDirector_HandleRequest(t *testing.T) {
 		targetModelName         string                   // Expected model name after target model resolution
 		admitRequestDenialError error                    // Expected denial error from admission plugin
 		prepareDataPlugin       *mockPrepareDataPlugin
+		preRequestPlugin        *mockPreRequestPlugin
+		wantMutatedBodyFields   map[string]any // Additional fields expected in the mutated body (set by PreRequest plugins)
 	}{
 		{
 			name: "successful completions request",
@@ -603,6 +625,39 @@ func TestDirector_HandleRequest(t *testing.T) {
 			wantErrCode:            errcommon.Internal,
 			inferenceObjectiveName: objectiveName,
 		},
+		{
+			name: "PreRequest plugin mutates request body",
+			reqBodyMap: map[string]any{
+				"model":  model,
+				"prompt": "prompt for body mutation test",
+			},
+			mockAdmissionController: &mockAdmissionController{admitErr: nil},
+			schedulerMockSetup: func(m *mockScheduler) {
+				m.scheduleResults = defaultSuccessfulScheduleResults
+			},
+			initialTargetModelName: model,
+			wantReqCtx: &handlers.RequestContext{
+				ObjectiveKey:    objectiveName,
+				TargetModelName: model,
+				TargetPod: &fwkdl.EndpointMetadata{
+					NamespacedName: types.NamespacedName{Namespace: "default", Name: "pod1"},
+					Address:        "192.168.1.100",
+					Port:           "8000",
+					MetricsHost:    "192.168.1.100:8000",
+				},
+				TargetEndpoint: "192.168.1.100:8000,192.168.2.100:8000,192.168.4.100:8000",
+			},
+			wantMutatedBodyModel:   model,
+			inferenceObjectiveName: objectiveName,
+			preRequestPlugin: &mockPreRequestPlugin{
+				typedName: fwkplugin.TypedName{Type: "mock-prerequest", Name: "body-mutator"},
+				key:       "priority",
+				value:     float64(5),
+			},
+			wantMutatedBodyFields: map[string]any{
+				"priority": float64(5),
+			},
+		},
 	}
 
 	period := time.Second
@@ -654,6 +709,9 @@ func TestDirector_HandleRequest(t *testing.T) {
 					config = config.WithPrepareDataPlugins(test.prepareDataPlugin)
 				}
 				config = config.WithAdmissionPlugins(newMockAdmissionPlugin("test-admit-plugin", test.admitRequestDenialError))
+				if test.preRequestPlugin != nil {
+					config = config.WithPreRequestPlugins(test.preRequestPlugin)
+				}
 
 				endpointCandidates := NewCachedEndpointCandidates(context.Background(), NewDatastoreEndpointCandidates(ds), time.Minute)
 				director := NewDirectorWithConfig(ds, mockSched, test.mockAdmissionController, openai.NewOpenAIParser(), endpointCandidates, config)
@@ -719,6 +777,21 @@ func TestDirector_HandleRequest(t *testing.T) {
 					}
 					assert.Equal(t, test.wantMutatedBodyModel, updatedBodyMap["model"],
 						"Mutated reqCtx.Request.Body model mismatch")
+				}
+				if test.wantMutatedBodyFields != nil {
+					updatedBodyMap := make(map[string]any)
+					if err := json.Unmarshal(reqCtx.Request.RawBody, &updatedBodyMap); err != nil {
+						t.Fatalf("Error unmarshalling RawBody for mutated field check: %v", err)
+					}
+					for key, wantVal := range test.wantMutatedBodyFields {
+						assert.Equal(t, wantVal, updatedBodyMap[key],
+							"Mutated body field %q mismatch", key)
+					}
+					// Also verify the model mutation is preserved alongside the plugin mutation
+					if test.wantMutatedBodyModel != "" {
+						assert.Equal(t, test.wantMutatedBodyModel, updatedBodyMap["model"],
+							"Model should be preserved after PreRequest plugin body mutation")
+					}
 				}
 				assert.Equal(t, len(reqCtx.Request.RawBody), reqCtx.RequestSize)
 			})
